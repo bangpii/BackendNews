@@ -4,12 +4,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer } from "node:http";
 
-import express from "express";
+import express, { type Express } from "express";
 import cors from "cors";
-import { Redis } from "ioredis";
 import { v2 as cloudinary } from "cloudinary";
 import nodemailer from "nodemailer";
-import { Server as SocketServer } from "socket.io";
 
 /* ------------------------------------------------------------------ *
  * Config
@@ -21,7 +19,6 @@ const credPath = path.resolve(
   process.env.FIREBASE_CREDENTIAL_PATH ?? "service-account.json"
 );
 
-const isProd = process.env.NODE_ENV === "production";
 const PORT = Number(process.env.PORT ?? 4000);
 const HOST = process.env.HOST ?? "0.0.0.0";
 const FE_URL = process.env.FE_URL ?? "https://bang-pii-news.vercel.app/";
@@ -30,74 +27,49 @@ const CORS_ORIGINS = (process.env.CORS_ORIGINS ?? "*")
   .map((s) => s.trim())
   .filter(Boolean);
 
-const redisEnabled = Boolean(process.env.REDIS_HOST);
-const socketEnabled = process.env.SOCKETIO_ENABLED === "true";
-
 /* ------------------------------------------------------------------ *
- * Status flags
+ * Integration status
  * ------------------------------------------------------------------ */
 
-let redisStatus = "disabled";
 let firebaseStatus = "disabled";
 let cloudinaryStatus = "disabled";
 let smtpStatus = "disabled";
-let socketioStatus = "disabled";
-
-const mark = (ok: boolean) => (ok ? "✓" : "✗");
+let redisStatus = "disabled";
+let dbRef: { firestore: unknown; auth: unknown } | null = null;
 
 /* ------------------------------------------------------------------ *
- * Redis
+ * Lazy init functions (idempotent, called once)
  * ------------------------------------------------------------------ */
 
-async function initRedis() {
-  if (!redisEnabled) return;
-  const redis = new Redis({
-    host: process.env.REDIS_HOST,
-    port: Number(process.env.REDIS_PORT ?? 6379),
-    password: process.env.REDIS_PASSWORD || undefined,
-    lazyConnect: true,
-    maxRetriesPerRequest: 2,
-    retryStrategy: (times: number) => Math.min(times * 200, 2000),
-  });
-  try {
-    await redis.connect();
-    await redis.ping();
-    redisStatus = "ready";
-  } catch {
-    redisStatus = "offline";
+let firebaseInitPromise: Promise<void> | null = null;
+function ensureFirebase() {
+  if (!firebaseInitPromise) {
+    firebaseInitPromise = (async () => {
+      try {
+        const { default: admin } = await import("firebase-admin");
+        let serviceAccount: object;
+        if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+          serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+        } else {
+          serviceAccount = JSON.parse(await readFile(credPath, "utf-8"));
+        }
+        if (!admin.apps.length) {
+          admin.initializeApp({
+            credential: admin.credential.cert(serviceAccount),
+            storageBucket: process.env.FIREBASE_STORAGE_BUCKET || undefined,
+          });
+        }
+        dbRef = { firestore: admin.firestore(), auth: admin.auth() };
+        firebaseStatus = "connected";
+      } catch {
+        firebaseStatus = "error";
+      }
+    })();
   }
-  return redis;
+  return firebaseInitPromise;
 }
 
-/* ------------------------------------------------------------------ *
- * Firebase
- * ------------------------------------------------------------------ */
-
-async function initFirebase() {
-  try {
-    const { default: admin } = await import("firebase-admin");
-    let serviceAccount: object;
-    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-      serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-    } else {
-      serviceAccount = JSON.parse(await readFile(credPath, "utf-8"));
-    }
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
-      storageBucket: process.env.FIREBASE_STORAGE_BUCKET || undefined,
-    });
-    await admin.firestore().listCollections();
-    firebaseStatus = "connected";
-  } catch {
-    firebaseStatus = "error";
-  }
-}
-
-/* ------------------------------------------------------------------ *
- * Cloudinary
- * ------------------------------------------------------------------ */
-
-async function initCloudinary() {
+function ensureCloudinary() {
   const name = process.env.CLOUDINARY_CLOUD_NAME;
   const key = process.env.CLOUDINARY_API_KEY;
   const secret = process.env.CLOUDINARY_API_SECRET;
@@ -105,25 +77,12 @@ async function initCloudinary() {
     cloudinaryStatus = "disabled";
     return;
   }
-  cloudinary.config({
-    cloud_name: name,
-    api_key: key,
-    api_secret: secret,
-    secure: true,
-  });
-  try {
-    await cloudinary.api.ping();
-    cloudinaryStatus = "connected";
-  } catch {
-    cloudinaryStatus = "error";
-  }
+  cloudinary.config({ cloud_name: name, api_key: key, api_secret: secret, secure: true });
+  cloudinaryStatus = "connected";
 }
 
-/* ------------------------------------------------------------------ *
- * SMTP (nodemailer)
- * ------------------------------------------------------------------ */
-
-async function initSmtp(): Promise<nodemailer.Transporter | null> {
+let smtpTransport: nodemailer.Transporter | null = null;
+function ensureSmtp() {
   const host = process.env.SMTP_HOST;
   const user = process.env.SMTP_USER;
   const pass = process.env.SMTP_PASS;
@@ -131,55 +90,41 @@ async function initSmtp(): Promise<nodemailer.Transporter | null> {
     smtpStatus = "disabled";
     return null;
   }
-  const transporter = nodemailer.createTransport({
+  smtpTransport = nodemailer.createTransport({
     host,
     port: Number(process.env.SMTP_PORT ?? 587),
     secure: process.env.SMTP_SECURE === "true",
     auth: { user, pass },
   });
-  try {
-    await transporter.verify();
-    smtpStatus = "ready";
-  } catch {
-    smtpStatus = "error";
-  }
-  return transporter;
+  smtpStatus = "configured";
+  return smtpTransport;
 }
 
 /* ------------------------------------------------------------------ *
- * Pretty status table
+ * buildStatus
  * ------------------------------------------------------------------ */
 
-function printTable() {
-  const lines = [
-    `Redis       ${mark(redisStatus === "ready")} ${redisStatus}`,
-    `Firebase    ${mark(firebaseStatus === "connected")} ${firebaseStatus}`,
-    `Cloudinary  ${mark(cloudinaryStatus === "connected")} ${cloudinaryStatus}`,
-    `SMTP        ${mark(smtpStatus === "ready")} ${smtpStatus}`,
-    `Socket.IO   ${mark(socketioStatus === "ready")} ${socketioStatus}`,
-  ];
-  const header = "Backend ready";
-  const width = Math.max(header.length, ...lines.map((l) => l.length)) + 6;
-  const center = (s: string) => {
-    const diff = width - 2 - s.length;
-    return " ".repeat(Math.floor(diff / 2)) + s + " ".repeat(Math.ceil(diff / 2));
+function buildStatus() {
+  return {
+    ok: true,
+    service: "bangpii-news-api",
+    integrations: {
+      firebase: firebaseStatus,
+      redis: redisStatus,
+      cloudinary: cloudinaryStatus,
+      smtp: smtpStatus,
+    },
+    fe: FE_URL,
+    time: new Date().toISOString(),
   };
-  const padRight = (s: string) => s + " ".repeat(Math.max(0, width - 2 - s.length));
-  console.log("┌" + "─".repeat(width) + "┐");
-  console.log("│" + center(header) + "│");
-  console.log("├" + "─".repeat(width) + "┤");
-  for (const l of lines) console.log("│ " + padRight(l) + " │");
-  console.log("└" + "─".repeat(width) + "┘");
 }
 
 /* ------------------------------------------------------------------ *
- * HTTP server + Socket.IO
+ * Build Express app
  * ------------------------------------------------------------------ */
 
-async function bootstrap() {
+export function createApp(): Express {
   const app = express();
-  const httpServer = createServer(app);
-
   app.disable("x-powered-by");
   app.use(express.json({ limit: "1mb" }));
   app.use(
@@ -196,38 +141,70 @@ async function bootstrap() {
   );
 
   app.get("/", (_req, res) => {
+    ensureCloudinary();
+    ensureSmtp();
+    void ensureFirebase();
     res.json({ service: "bangpii-news-api", message: "Bangpii News API is running." });
+  });
+
+  app.get("/health", (_req, res) => {
+    void ensureFirebase().then(() => {
+      res.json(buildStatus());
+    });
   });
 
   app.use((_req, res) => {
     res.status(404).json({ ok: false, error: "Not found" });
   });
 
-  let io: SocketServer | null = null;
-  if (socketEnabled) {
-    io = new SocketServer(httpServer, {
-      cors: {
-        origin: CORS_ORIGINS.includes("*") ? true : CORS_ORIGINS,
-        credentials: true,
-      },
-    });
-    io.on("connection", (socket) => {
-      socket.on("disconnect", () => {});
-    });
-    socketioStatus = "ready";
-  }
+  return app;
+}
 
-  await Promise.all([initRedis(), initFirebase(), initCloudinary(), initSmtp()]);
+export { dbRef, smtpTransport };
 
+/* ------------------------------------------------------------------ *
+ * Local dev server (falls back if run directly)
+ * ------------------------------------------------------------------ */
+
+const isMain =
+  process.argv[1] &&
+  (await import("node:url"))
+    .fileURLToPath(import.meta.url)
+    .replace(/[\\/]+$/, "") ===
+    process.argv[1].replace(/[\\/]+$/, "");
+
+if (isMain) {
+  const httpServer = createServer(createApp());
   httpServer.listen(PORT, HOST, () => {
-    printTable();
-    console.log("API  →  http://" + HOST + ":" + PORT);
-    console.log("FE   →  " + FE_URL);
-    if (io) console.log("SOCK →  Socket.IO listening on " + HOST + ":" + PORT);
+    ensureCloudinary();
+    ensureSmtp();
+    void ensureFirebase().then(() => {
+      printTable();
+      console.log("API  →  http://" + HOST + ":" + PORT);
+      console.log("FE   →  " + FE_URL);
+    });
   });
 }
 
-bootstrap().catch((err) => {
-  console.error("Fatal bootstrap error", err);
-  process.exit(1);
-});
+function printTable() {
+  const lines = [
+    `Firebase    ${mark(firebaseStatus === "connected")} ${firebaseStatus}`,
+    `Redis       ${mark(redisStatus === "ready")} ${redisStatus}`,
+    `Cloudinary  ${mark(cloudinaryStatus === "connected")} ${cloudinaryStatus}`,
+    `SMTP        ${mark(smtpStatus === "configured")} ${smtpStatus}`,
+  ];
+  const header = "Backend ready";
+  const width = Math.max(header.length, ...lines.map((l) => l.length)) + 6;
+  const center = (s: string) => {
+    const diff = width - 2 - s.length;
+    return " ".repeat(Math.floor(diff / 2)) + s + " ".repeat(Math.ceil(diff / 2));
+  };
+  const padRight = (s: string) => s + " ".repeat(Math.max(0, width - 2 - s.length));
+  console.log("┌" + "─".repeat(width) + "┐");
+  console.log("│" + center(header) + "│");
+  console.log("├" + "─".repeat(width) + "┤");
+  for (const l of lines) console.log("│ " + padRight(l) + " │");
+  console.log("└" + "─".repeat(width) + "┘");
+}
+
+const mark = (ok: boolean) => (ok ? "✓" : "✗");

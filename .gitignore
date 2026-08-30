@@ -6,3 +6,5 @@ dist/
 npm-debug.log*
 *.tsbuildinfo
 .DS_Store
+service-account.json
+firebase-debug.log

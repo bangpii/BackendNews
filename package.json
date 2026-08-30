@@ -1,0 +1,68 @@
+{
+  "name": "bangpii-news-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Bangpii News API + realtime backend (Node + Express + TypeScript)",
+  "type": "module",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "node --watch --import ./node_modules/tsx/dist/loader.mjs server.ts",
+    "build": "esbuild server.ts --bundle --platform=node --format=esm --packages=external --outfile=dist/server.js",
+    "start": "node dist/server.js",
+    "typecheck": "esbuild server.ts --bundle --platform=node --format=esm --packages=external --outfile=/dev/null && tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "bangpii-news",
+    "api",
+    "express",
+    "typescript",
+    "realtime",
+    "socket.io"
+  ],
+  "author": "baihaqie",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@socket.io/redis-adapter": "^8.3.0",
+    "cloudinary": "^2.11.0",
+    "compression": "^1.8.1",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "express-mongo-sanitize": "^2.2.0",
+    "express-rate-limit": "^8.7.0",
+    "express-slow-down": "^3.1.1",
+    "firebase-admin": "^12.7.0",
+    "helmet": "^8.3.0",
+    "hpp": "^0.2.3",
+    "ioredis": "^6.0.0",
+    "morgan": "^1.12.0",
+    "multer": "^2.3.0",
+    "nodemailer": "^9.0.6",
+    "pino": "^10.3.1",
+    "pino-http": "^11.0.0",
+    "rate-limit-redis": "^6.0.1",
+    "sharp": "^0.35.4",
+    "socket.io": "^4.8.3",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@types/compression": "^1.8.1",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/hpp": "^0.2.7",
+    "@types/morgan": "^1.9.10",
+    "@types/multer": "^2.2.0",
+    "@types/node": "^26.4.0",
+    "@types/nodemailer": "^8.0.1",
+    "esbuild": "^0.28.2",
+    "supertest": "^7.2.2",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11"
+  }
+}

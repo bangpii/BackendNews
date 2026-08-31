@@ -1,7 +1,4 @@
 import "dotenv/config";
-import { readFile } from "node:fs/promises";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { createServer } from "node:http";
 
 import express, { type Express } from "express";
@@ -9,95 +6,73 @@ import cors from "cors";
 import { v2 as cloudinary } from "cloudinary";
 import nodemailer from "nodemailer";
 
+import { buildApp } from "./src/app.js";
+import { env } from "./src/config/env.js";
+import { ensureFirebase } from "./src/config/firebase.js";
+import { seedNewsOnce } from "./src/services/newsService.js";
+
 /* ------------------------------------------------------------------ *
  * Config
  * ------------------------------------------------------------------ */
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const credPath = path.resolve(
-  __dirname,
-  process.env.FIREBASE_CREDENTIAL_PATH ?? "service-account.json"
-);
-
-const PORT = Number(process.env.PORT ?? 4000);
-const HOST = process.env.HOST ?? "0.0.0.0";
-const FE_URL = process.env.FE_URL ?? "https://bang-pii-news.vercel.app/";
-const CORS_ORIGINS = (process.env.CORS_ORIGINS ?? "*")
-  .split(",")
-  .map((s) => s.trim())
-  .filter(Boolean);
+const PORT = env.port;
+const HOST = env.host;
+const FE_URL = env.feUrl;
+const CORS_ORIGINS = env.corsOrigins;
 
 /* ------------------------------------------------------------------ *
  * Integration status
  * ------------------------------------------------------------------ */
 
-let firebaseStatus = "disabled";
 let cloudinaryStatus = "disabled";
 let smtpStatus = "disabled";
 let redisStatus = "disabled";
-let dbRef: { firestore: unknown; auth: unknown } | null = null;
+let firebaseStatus = "disabled";
 
 /* ------------------------------------------------------------------ *
  * Lazy init functions (idempotent, called once)
  * ------------------------------------------------------------------ */
 
-let firebaseInitPromise: Promise<void> | null = null;
-function ensureFirebase() {
-  if (!firebaseInitPromise) {
-    firebaseInitPromise = (async () => {
-      try {
-        const { default: admin } = await import("firebase-admin");
-        let serviceAccount: object;
-        if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-          serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-        } else {
-          serviceAccount = JSON.parse(await readFile(credPath, "utf-8"));
-        }
-        if (!admin.apps.length) {
-          admin.initializeApp({
-            credential: admin.credential.cert(serviceAccount),
-            storageBucket: process.env.FIREBASE_STORAGE_BUCKET || undefined,
-          });
-        }
-        dbRef = { firestore: admin.firestore(), auth: admin.auth() };
-        firebaseStatus = "connected";
-      } catch {
-        firebaseStatus = "error";
-      }
-    })();
+async function initFirebase() {
+  try {
+    await ensureFirebase();
+    firebaseStatus = "connected";
+  } catch (err) {
+    firebaseStatus = "error";
+    console.error("[initFirebase]", (err as Error)?.message || err);
   }
-  return firebaseInitPromise;
 }
 
 function ensureCloudinary() {
-  const name = process.env.CLOUDINARY_CLOUD_NAME;
-  const key = process.env.CLOUDINARY_API_KEY;
-  const secret = process.env.CLOUDINARY_API_SECRET;
-  if (!name || !key || !secret) {
+  if (!env.cloudinaryCloudName || !env.cloudinaryApiKey || !env.cloudinaryApiSecret) {
     cloudinaryStatus = "disabled";
     return;
   }
-  cloudinary.config({ cloud_name: name, api_key: key, api_secret: secret, secure: true });
+  cloudinary.config({
+    cloud_name: env.cloudinaryCloudName,
+    api_key: env.cloudinaryApiKey,
+    api_secret: env.cloudinaryApiSecret,
+    secure: true,
+  });
   cloudinaryStatus = "connected";
 }
 
-let smtpTransport: nodemailer.Transporter | null = null;
+let transport: nodemailer.Transporter | null = null;
 function ensureSmtp() {
-  const host = process.env.SMTP_HOST;
-  const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASS;
-  if (!host || !user || !pass) {
+  if (!env.smtpHost || !env.smtpUser || !env.smtpPass) {
     smtpStatus = "disabled";
     return null;
   }
-  smtpTransport = nodemailer.createTransport({
-    host,
-    port: Number(process.env.SMTP_PORT ?? 587),
-    secure: process.env.SMTP_SECURE === "true",
-    auth: { user, pass },
-  });
+  if (!transport) {
+    transport = nodemailer.createTransport({
+      host: env.smtpHost,
+      port: env.smtpPort,
+      secure: env.smtpSecure,
+      auth: { user: env.smtpUser, pass: env.smtpPass },
+    });
+  }
   smtpStatus = "configured";
-  return smtpTransport;
+  return transport;
 }
 
 /* ------------------------------------------------------------------ *
@@ -123,6 +98,14 @@ function buildStatus() {
  * Build Express app
  * ------------------------------------------------------------------ */
 
+let seedPromise: Promise<void> | null = null;
+function maybeSeed() {
+  if (!seedPromise) {
+    seedPromise = seedNewsOnce().catch(() => undefined);
+  }
+  return seedPromise;
+}
+
 export function createApp(): Express {
   const app = express();
   app.disable("x-powered-by");
@@ -140,27 +123,27 @@ export function createApp(): Express {
     })
   );
 
-  app.get("/", (_req, res) => {
+  app.get("/", async (_req, res) => {
     ensureCloudinary();
     ensureSmtp();
-    void ensureFirebase();
+    void initFirebase();
+    void maybeSeed();
     res.json({ service: "bangpii-news-api", message: "Bangpii News API is running." });
   });
 
   app.get("/health", (_req, res) => {
-    void ensureFirebase().then(() => {
+    void initFirebase().then(() => {
       res.json(buildStatus());
     });
   });
 
-  app.use((_req, res) => {
-    res.status(404).json({ ok: false, error: "Not found" });
-  });
+  // Pasang main security + routes dari src/app.ts
+  buildApp(app);
 
   return app;
 }
 
-export { dbRef, smtpTransport };
+export { buildStatus };
 
 /* ------------------------------------------------------------------ *
  * Local dev server (falls back if run directly)
@@ -178,7 +161,8 @@ if (isMain) {
   httpServer.listen(PORT, HOST, () => {
     ensureCloudinary();
     ensureSmtp();
-    void ensureFirebase().then(() => {
+    void initFirebase().then(() => {
+      void maybeSeed();
       printTable();
       console.log("API  →  http://" + HOST + ":" + PORT);
       console.log("FE   →  " + FE_URL);

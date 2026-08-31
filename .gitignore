@@ -8,3 +8,5 @@ npm-debug.log*
 .DS_Store
 service-account.json
 firebase-debug.log
+.vercel
+.env*

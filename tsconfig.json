@@ -12,9 +12,8 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "noEmit": true,
-    "types": ["node"]
+    "noEmit": true
   },
-  "include": ["server.ts"],
+  "include": ["server.ts", "api", "src"],
   "exclude": ["node_modules", "dist", "tests"]
 }

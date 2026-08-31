@@ -1,102 +1,212 @@
-# Bangpii News - Backend
+# Bangpii News — Backend API
 
-Backend API untuk **Bangpii News** (Node + Express + TypeScript). Berisi integrasi Redis, Firebase (Firestore), Cloudinary, SMTP (Gmail), dan Socket.IO.
+Backend REST API + realtime untuk aplikasi **Bangpii News** (Node.js + Express + TypeScript). Menyediakan berita (fetch eksternal), komunitas (post, like, komentar, reaksi, view), dan kontak — semuanya **guest/anonymous tanpa login**.
 
-## Cara Menjalankan
+> **Dokumentasi lain:** lihat `CURRENT.md` untuk ringkasan progres & status fitur saat ini.
+
+## Fitur Utama
+
+- **Berita**: fetch dari API eksternal (Berita Indo) → simpan ke Firestore; endpoint hero, terkini, trending, kategori, pencarian, detail, sync manual.
+- **Komunitas**: post teks/gambar (kompresi `sharp` → webp → Cloudinary), like, komentar, reaksi, share, view per-IP.
+- **Kontak**: form kontak → simpan ke Firestore + kirim email via SMTP (nodemailer).
+- **Keamanan**: helmet, CORS, rate-limit global & ketat, slow-down, sanitasi body, anti-DoS view.
+- **Realtime**: Socket.IO (dengan Redis adapter bila Redis tersedia).
+
+## Teknologi / yang Diinstal
+
+| Kategori | Paket |
+|---|---|
+| Runtime | Node.js ≥ 20, TypeScript |
+| Framework | Express 5 |
+| Data | firebase-admin (Firestore) |
+| Media | cloudinary, multer, sharp |
+| Email | nodemailer |
+| Realtime | socket.io, @socket.io/redis-adapter, ioredis, rate-limit-redis |
+| Keamanan | helmet, cors, express-rate-limit, express-slow-down, hpp |
+| Validasi | zod |
+| Logging | pino, pino-http, morgan |
+| Lain | dotenv, compression, pdfkit (laporan), esbuild/tsx (dev), vitest + supertest (test) |
+
+## Persyaratan
+
+- **Node.js ≥ 20**
+- **Firestore** (Firebase Admin) — wajib untuk semua data.
+- **Cloudinary** — opsional, wajib untuk upload gambar post.
+- **SMTP** — opsional, untuk kirim email dari form kontak.
+- **Redis** — opsional, untuk realtime + rate-limit store.
+
+## Instalasi
 
 ```bash
-# development (auto-reload via tsx)
-npm run dev
+npm install
+```
 
-# build lalu start
+## Konfigurasi
+
+Salin template env lalu isi sesuai kebutuhan:
+
+```bash
+cp .env.example .env
+```
+
+Variabel penting (nilai rahasia diisi sendiri, tidak dicantumkan di sini):
+
+| Variabel | Keterangan |
+|---|---|
+| `PORT`, `HOST`, `NODE_ENV` | Konfigurasi server |
+| `CORS_ORIGINS` | Origin yang diizinkan (pisahkan koma) |
+| `FIREBASE_SERVICE_ACCOUNT` | JSON service account Firebase (atau `FIREBASE_CREDENTIAL_PATH` ke file) |
+| `CLOUDINARY_CLOUD_NAME` / `CLOUDINARY_API_KEY` / `CLOUDINARY_API_SECRET` | Kredensial Cloudinary (untuk upload gambar) |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `SMTP_SECURE` | Kredensial SMTP email |
+| `CONTACT_TO` | Alamat email tujuan form kontak |
+| `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` | Redis (opsional) |
+| `RATE_LIMIT_*` | Penyetelan rate-limit |
+
+> ⚠️ Jangan pernah commit file `.env` atau `service-account.json` ke git. Keduanya sudah berada di `.gitignore` / `.vercelignore`.
+
+## Menjalankan Server
+
+**Development (watch, reload otomatis):**
+
+```bash
+npm run dev
+```
+
+Server berjalan di `http://localhost:4000` (default `PORT`).
+
+**Menjalankan di terminal lain → tes API:**
+
+```bash
+npm run test:api
+```
+
+Menjalankan 28 pengecekan endpoint terhadap `http://localhost:4000` dengan spinner loading dan menghasilkan laporan PDF `docs/api-test-report.pdf`.
+
+Target produksi (opsional):
+
+```bash
+API_URL=https://bangpii-news.vercel.app npm run test:api
+```
+
+**Build & menjalankan produksi:**
+
+```bash
 npm run build
 npm start
 ```
 
-## Build & Docker
+**Script lainnya:**
 
 ```bash
-npm run build          # bundle ESM (dependency external)
-docker build -t bangpii-news-backend .
-docker run -p 4000:4000 -e PORT=4000 bangpii-news-backend
+npm run typecheck   # cek tipe TypeScript
+npm test            # unit test (vitest)
+npm run report:api  # sama dengan test:api (generate PDF)
 ```
 
-## Deploy ke Koyeb (free tier, long-running, Socket.IO + Redis jalan penuh)
-
-Koyeb menjalankan Node.js sebagai **web service selalu aktif** (bukan serverless), sehingga Socket.IO + Redis berjalan lengkap.
-
-1. **Push ke GitHub** — push folder `backend/` (dengan `Dockerfile`, `.dockerignore`, `.gitignore`) ke sebuah repo GitHub, misal `bangpii-news-backend`.
-2. **Buat Web Service di Koyeb** (koyeb.com → Create Web Service → GitHub):
-   - Pilih repo dan branch.
-   - Build method: **Dockerfile**.
-3. **Set Environment Variables** di dashboard Koyeb:
-   - `NODE_ENV=production`
-   - `PORT=8080` (port yang diekspos Koyeb)
-   - `HOST=0.0.0.0`
-   - `CORS_ORIGINS=http://localhost:3000,https://bang-pii-news.vercel.app/`
-   - `FE_URL=https://bang-pii-news.vercel.app/`
-   - `REDIS_HOST=<host redis koyeb>`, `REDIS_PORT=6379` (atau kosongkan kalau belum pakai Redis)
-   - `FIREBASE_SERVICE_ACCOUNT=<isi penuh file service-account.json sebagai JSON string>`
-   - `CLOUDINARY_CLOUD_NAME` / `CLOUDINARY_API_KEY` / `CLOUDINARY_API_SECRET`
-   - `SMTP_HOST` / `SMTP_PORT` / `SMTP_SECURE` / `SMTP_USER` / `SMTP_PASS` / `CONTACT_TO`
-   - `SOCKETIO_ENABLED=true`
-4. **Deploy** → Koyeb build image & run `node dist/server.js` sebagai service aktif.
-
-> **Catatan keamanan:** `service-account.json`, `.env`, dan `dist/` tidak disertakan ke image/container (lihat `.dockerignore` & `.gitignore`). Kredensial Firebase disuplai lewat env var `FIREBASE_SERVICE_ACCOUNT`.
->
-> Redis lokal bukan bagian dari deploy — gunakan Koyeb Redis add-on atau layanan Redis eksternal, lalu isi `REDIS_HOST`/`REDIS_PORT`. Jika tidak dipakai, biarkan `REDIS_HOST` kosong.
-
-
-Saat dijalankan, terminal menampilkan tabel status integrasi:
+## Struktur Proyek
 
 ```
-┌─────────────────────────────┐
-│       Backend ready       │
-├─────────────────────────────┤
-│ Redis       ✓ ready         │
-│ Firebase    ✓ connected     │
-│ Cloudinary  ✓ connected     │
-│ SMTP        ✓ ready         │
-│ Socket.IO   ✓ ready         │
-└─────────────────────────────┘
-API  →  http://0.0.0.0:4000
-FE   →  https://bang-pii-news.vercel.app/
+server.ts               # entrypoint (Express app + inisialisasi)
+src/
+  app.ts                # setup middleware & router
+  config/               # firebase, cloudinary, env, redis, smtp
+  controllers/          # logika tiap resource
+  middleware/           # error, guest, rate-limit, sanitize
+  models/               # akses Firestore (news, post, comment, dll)
+  routes/               # definisi endpoint (prefix /api)
+  services/             # business logic (fetch berita, email, dll)
+  utils/                # helper (query, stripUndefined, dll)
+  validations/          # schema zod
+scripts/
+  api-sweep.mjs         # tes API + generate PDF
+docs/
+  api-test-report.pdf   # laporan tes yang dihasilkan
+vercel.json             # konfigurasi deploy Vercel
 ```
 
-## Konfigurasi (.env)
+## Endpoint API
 
-Salin `.env.example` menjadi `.env`, lalu isi sesuai kebutuhan:
+Semua endpoint di-prefix `/api`. Contoh lengkap + respons: lihat `docs/api-test-report.pdf`.
 
-| Variabel | Deskripsi |
-|----------|-----------|
-| `NODE_ENV` | Environment (`development` / `production`) |
-| `PORT` | Port API (default 4000) |
-| `HOST` | Host bind (default 0.0.0.0) |
-| `CORS_ORIGINS` | Origin yang diizinkan, dipisah koma |
-| `FE_URL` | URL frontend (ditampilkan di terminal) |
-| `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` | Redis (opsional, kosongkan untuk disable) |
-| `FIREBASE_PROJECT_ID` / `FIREBASE_CREDENTIAL_PATH` | Firebase Admin (service account JSON) |
-| `CLOUDINARY_CLOUD_NAME` / `API_KEY` / `API_SECRET` | Cloudinary |
-| `SMTP_HOST` / `SMTP_PORT` / `SMTP_SECURE` / `SMTP_USER` / `SMTP_PASS` / `CONTACT_TO` | Email via SMTP |
-| `SOCKETIO_ENABLED` | Aktifkan Socket.IO (`true` / `false`) |
+### Berita
+| Method | Path | Keterangan |
+|---|---|---|
+| GET | `/api/news` | Daftar berita (filter: `limit`, `category`, `search`) |
+| GET | `/api/news/hero` | Berita unggulan |
+| GET | `/api/news/terkini` | Berita terbaru |
+| GET | `/api/news/trending` | Berita trending (berdasar views) |
+| GET | `/api/news/sync` | Fetch/sinkronisasi berita dari sumber eksternal |
+| GET | `/api/news/:id` | Detail berita |
+| GET | `/api/categories` | Daftar kategori |
+| GET | `/api/categories/:slug` | Berita per kategori |
 
-## Realtime
+### Komunitas (Post)
+| Method | Path | Keterangan |
+|---|---|---|
+| GET | `/api/posts` | Daftar post komunitas |
+| POST | `/api/posts` | Buat post (multipart: foto opsional) |
+| GET | `/api/posts/:id/comments` | Komentar sebuah post |
+| POST | `/api/posts/:id/comments` | Tambah komentar |
+| POST | `/api/posts/:id/like` | Like/unlike post |
+| POST | `/api/posts/:id/share` | Share post |
 
-- **Firebase Firestore** adalah sumber data utama (online) dengan listener realtime bawaan.
-- **Socket.IO** dipakai untuk broadcast instan antar client (notifikasi, event live), bisa dipadukan dengan Firestore.
+### Komentar (artikel berita)
+| Method | Path | Keterangan |
+|---|---|---|
+| GET | `/api/comments/article/:id` | Komentar artikel |
+| GET | `/api/comments/article/:id/count` | Jumlah komentar artikel |
+| POST | `/api/comments/article/:id` | Tambah komentar artikel |
+| POST | `/api/comments/:id/like` | Like/unlike komentar |
 
-## Library Compression
+### Reaksi & View
+| Method | Path | Keterangan |
+|---|---|---|
+| POST | `/api/reactions/:type/:id` | Beri reaksi (mis. `:type` = `post`) |
+| GET | `/api/reactions/:type/:id` | Lihat reaksi |
+| POST | `/api/views/:id` | Catat view (dedup per-IP 30 menit) |
+| GET | `/api/views/:id` | Jumlah view |
 
-- `sharp` — kompresi/optimasi gambar
-- `compression` — kompresi respons HTTP (gzip/brotli)
+### Pengguna & Auth (guest/dummy)
+| Method | Path | Keterangan |
+|---|---|---|
+| GET | `/api/users/me` | Identitas guest saat ini |
+| PUT | `/api/users/me` | Perbarui identitas |
+| GET | `/api/auth/whoami` | Info guest/client |
 
-## API News (gratis, update tiap hari, berita Indonesia)
+### Kontak
+| Method | Path | Keterangan |
+|---|---|---|
+| POST | `/api/contact` | Kirim pesan kontak (simpan + email) |
 
-| API | Butuh Key? | Kuota | Catatan |
-|-----|-----------|-------|---------|
-| **Berita Indo API** (satyawikananda) | ❌ Tidak | Unlimited | ⭐ Terbaik untuk project ini. Ambil berita dari banyak portal Indonesia (Antara, CNN, CNBC, Republika, Tempo, Okezone, Kumparan, Tribun, Suara, dll). Bahasa Indonesia, gratis, tanpa key. |
-| **API Berita Indonesia** (renomureza) | ❌ Tidak | Unlimited | Alternatif, dari RSS portal berita Indonesia |
-| **GNews API** | ✅ Ya (gratis) | 100 req/day | Mendukung `lang=id` dan `country=id`, tapi perlu daftar |
-| **CNN Indonesia API** | ❌ Tidak | Unlimited | Khusus CNN |
+### Sistem
+| Method | Path | Keterangan |
+|---|---|---|
+| GET | `/health` | Status integrasi (firebase, redis, cloudinary, smtp) |
 
-Referensi lebih lengkap: [DAFTAR-API-LOKAL-INDONESIA](https://github.com/farizdotid/DAFTAR-API-LOKAL-INDONESIA)
+## Deploy ke Vercel
+
+```bash
+vercel login
+vercel --prod --yes
+```
+
+Sebelum deploy, set env berikut di dashboard Vercel (Production) — nilai rahasia diset manual, tidak di-commit:
+
+`FIREBASE_SERVICE_ACCOUNT`, `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `CONTACT_TO`, `CORS_ORIGINS`, `FE_URL`.
+
+Setelah deploy, verifikasi status integrasi di:
+
+```
+GET https://<deployment-url>/health
+```
+
+## Verifikasi
+
+```bash
+npm run typecheck   # cek tipe
+npm run test:api    # tes endpoint + laporan PDF
+```
+
+## Lisensi
+
+MIT

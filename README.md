@@ -63,7 +63,7 @@ Variabel penting (nilai rahasia diisi sendiri, tidak dicantumkan di sini):
 | `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` | Redis (opsional) |
 | `RATE_LIMIT_*` | Penyetelan rate-limit |
 | `ADMIN_API_KEY` | Kunci untuk endpoint admin/sensitif (kirim header `x-api-key`) |
-| `CRON_SECRET` | Kunci untuk Vercel Cron Jobs (kirim `Authorization: Bearer <secret>`) |
+| `CRON_SECRET` | Kunci alternatif via `Authorization: Bearer <secret>` (dipakai pemanggil eksternal/otomatis) |
 
 > ⚠️ Jangan pernah commit file `.env` atau `service-account.json` ke git. Keduanya sudah berada di `.gitignore` / `.vercelignore`.
 
@@ -77,16 +77,32 @@ npm run dev
 
 Server berjalan di `http://localhost:4000` (default `PORT`).
 
-**Menjalankan di terminal lain → tes API:**
+### Menjalankan Tes Debug → Menghasilkan PDF
 
+Tes debug mengecek **28 endpoint** dengan spinner loading, lalu menghasilkan laporan **PDF** berisi tabel alamat endpoint + status + contoh respons, disimpan di `docs/api-test-report.pdf`.
+
+Perlu **2 terminal** — satu untuk server, satu untuk tes:
+
+**Terminal 1 — jalankan server:**
+```bash
+npm run dev
+```
+Biarkan berjalan (akan menampilkan log server). Pastikan output-nya menampilkan server aktif di `http://localhost:4000`.
+
+**Terminal 2 — jalankan tes & buat PDF:**
 ```bash
 npm run test:api
 ```
 
-Menjalankan 28 pengecekan endpoint terhadap `http://localhost:4000` dengan spinner loading dan menghasilkan laporan PDF `docs/api-test-report.pdf`.
+Setelah selesai, hasilnya tampil di layar (mis. `✓ Selesai. Sukses 28/28 endpoint.`) dan PDF tersimpan di **`docs/api-test-report.pdf`** — buka file tersebut untuk melihat tabel rincian.
 
-Target produksi (opsional):
+> **Jika endpoint `/api/news/sync` ikut dites**, ia kini diproteksi `x-api-key`. Sertakan kunci saat menjalankan:
+> ```bash
+> API_KEY=<ADMIN_API_KEY> npm run test:api
+> ```
+> Tanpa `API_KEY`, tes sync akan ditandai `401`.
 
+**Opsional — tes langsung ke production (ganti target):**
 ```bash
 API_URL=https://bangpii-news.vercel.app npm run test:api
 ```

@@ -1,6 +1,9 @@
 name: Auto-sync berita
 
 on:
+  # Jumlah daftar: push memicu regestrasi workflow di GitHub UI.
+  push:
+    branches: [main]
   schedule:
     # Tiap 6 jam (UTC). Hapus/ubah sesuai kebutuhan.
     - cron: "0 */6 * * *"

@@ -1,0 +1,23 @@
+name: Auto-sync berita
+
+on:
+  schedule:
+    # Tiap 6 jam (UTC). Hapus/ubah sesuai kebutuhan.
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Panggil endpoint sync (dengan kunci admin)
+        run: |
+          curl -sS --fail \
+            -H "x-api-key: ${{ secrets.ADMIN_API_KEY }}" \
+            -o /tmp/sync.json \
+            -w "HTTP %{http_code} dalam %{time_total}s\n" \
+            --max-time 540 \
+            https://bangpii-news.vercel.app/api/news/sync
+          cat /tmp/sync.json
+          echo
+        timeout-minutes: 10

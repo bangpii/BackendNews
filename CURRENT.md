@@ -11,7 +11,7 @@ Ringkasan progres & status fitur backend API saat ini. Diperbarui: **31 Agu 2026
 | Frontend | ✅ Live | https://bang-pii-news.vercel.app |
 | Remote git | ✅ Ter-push | github.com/bangpii/BackendNews (branch `main`) |
 | Keamanan endpoint admin | ✅ Aktif | `/api/news/sync` dilindungi `x-api-key` / `Authorization: Bearer` |
-| Cron auto-sync berita | ✅ Aktif | Vercel Cron Jobs → `/api/news/sync` tiap 6 jam |
+| Cron auto-sync berita | ✅ Aktif | GitHub Actions → `/api/news/sync` tiap 6 jam |
 
 ## Status Integrasi (per `/health`)
 
@@ -46,7 +46,7 @@ Daftar fitur backend dan statusnya.
 | Auth/Guest session | ✅ | `whoami`, identitas guest; tanpa login wajib |
 | Rate-limit & anti-DoS | ✅ | Global + strict limiter, slow-down |
 | Proteksi endpoint admin | ✅ | `requireApiKey` (x-api-key / Bearer cron) pada `/api/news/sync` |
-| Cron auto-sync berita | ✅ | Vercel Cron Jobs → `/api/news/sync` tiap 6 jam |
+| Cron auto-sync berita | ✅ | GitHub Actions → `/api/news/sync` tiap 6 jam |
 
 ## Env — Status di Vercel (Produksi)
 
@@ -62,7 +62,7 @@ Daftar fitur backend dan statusnya.
 | `CONTACT_TO` | ✅ diset | Tujuan email kontak |
 | `CORS_ORIGINS` / `FE_URL` | ✅ diset | |
 | `ADMIN_API_KEY` | ✅ diset | Proteksi endpoint admin/sensitif |
-| `CRON_SECRET` | ✅ diset | Vercel Cron Jobs (Bearer) |
+| `CRON_SECRET` | ✅ diset | Alternatif Bearer untuk pemanggil eksternal |
 | `REDIS_*` | — | Opsional, belum dipakai |
 
 > Nilai rahasia tidak dicantumkan di dokumen ini.
@@ -93,5 +93,8 @@ Daftar fitur backend dan statusnya.
 ## Belum / Hal yang Bisa Dilakukan Berikutnya
 
 - [ ] Verifikasi end-to-end nyata di produksi (upload 1 gambar via endpoint, kirim 1 pesan kontak) — konfirmasi Cloudinary & SMTP berfungsi nyata.
+- [ ] Set repository secret `ADMIN_API_KEY` di GitHub (nilai sama dgn Vercel) agar workflow `news-sync.yml` berhasil jalan.
 - [ ] (Opsional) Aktifkan Redis untuk realtime adapter + rate-limit store terdistribusi.
 - [ ] (Opsional) Tambah auth/akun jika fitur login dibutuhkan.
+
+> **⚠ Keterbatasan Vercel Hobby:** fungsi serverless dibatasi **10 detik**, sedangkan `/api/news/sync` butuh **±77 detik** (fetch eksternal + tulis Firestore). Karena itu sync **tidak boleh** dipicu dari Vercel (cron Vercel maupun request biasa → hang/timeout). Solusi aktif: **GitHub Actions** memantik endpoint tiap 6 jam. Vercel Cron di `vercel.json` sengaja dihapus.

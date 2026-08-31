@@ -11,7 +11,7 @@ Backend REST API + realtime untuk aplikasi **Bangpii News** (Node.js + Express +
 - **Kontak**: form kontak → simpan ke Firestore + kirim email via SMTP (nodemailer).
 - **Keamanan**: helmet, CORS, rate-limit global & ketat, slow-down, sanitasi body, anti-DoS view, **proteksi API-key pada endpoint admin/sensitif** (`/api/news/sync`).
 - **Realtime**: Socket.IO (dengan Redis adapter bila Redis tersedia).
-- **Cron (auto-sync)**: Vercel Cron Jobs menjalankan `/api/news/sync` otomatis setiap 6 jam (lihat `vercel.json`).
+- **Cron (auto-sync)**: GitHub Actions memanggil `/api/news/sync` otomatis setiap 6 jam (lihat `.github/workflows/news-sync.yml`).
 
 ## Teknologi / yang Diinstal
 
@@ -207,6 +207,8 @@ GET https://<deployment-url>/health
 > ```bash
 > API_KEY=<ADMIN_API_KEY> npm run test:api
 > ```
+>
+> **Catatan**: Vercel Hobby membean fungsi serverless hanya 10 detik, sedangkan satu sinkronisasi berita butuh ±77 detik — jadi **jangan** memanggil `/api/news/sync` langsung dari Vercel (cron Vercel maupun request biasa akan hang/timeout). Pakai **GitHub Actions** (`.github/workflows/news-sync.yml`) yang dipicu tiap 6 jam, atau panggil manual dari host lain. Untuk menjalankannya, set repository secret `ADMIN_API_KEY` di pengaturan GitHub (nilai sama dengan `ADMIN_API_KEY` di Vercel).
 
 ## Verifikasi
 

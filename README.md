@@ -9,8 +9,9 @@ Backend REST API + realtime untuk aplikasi **Bangpii News** (Node.js + Express +
 - **Berita**: fetch dari API eksternal (Berita Indo) → simpan ke Firestore; endpoint hero, terkini, trending, kategori, pencarian, detail, sync manual.
 - **Komunitas**: post teks/gambar (kompresi `sharp` → webp → Cloudinary), like, komentar, reaksi, share, view per-IP.
 - **Kontak**: form kontak → simpan ke Firestore + kirim email via SMTP (nodemailer).
-- **Keamanan**: helmet, CORS, rate-limit global & ketat, slow-down, sanitasi body, anti-DoS view.
+- **Keamanan**: helmet, CORS, rate-limit global & ketat, slow-down, sanitasi body, anti-DoS view, **proteksi API-key pada endpoint admin/sensitif** (`/api/news/sync`).
 - **Realtime**: Socket.IO (dengan Redis adapter bila Redis tersedia).
+- **Cron (auto-sync)**: Vercel Cron Jobs menjalankan `/api/news/sync` otomatis setiap 6 jam (lihat `vercel.json`).
 
 ## Teknologi / yang Diinstal
 
@@ -61,6 +62,8 @@ Variabel penting (nilai rahasia diisi sendiri, tidak dicantumkan di sini):
 | `CONTACT_TO` | Alamat email tujuan form kontak |
 | `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` | Redis (opsional) |
 | `RATE_LIMIT_*` | Penyetelan rate-limit |
+| `ADMIN_API_KEY` | Kunci untuk endpoint admin/sensitif (kirim header `x-api-key`) |
+| `CRON_SECRET` | Kunci untuk Vercel Cron Jobs (kirim `Authorization: Bearer <secret>`) |
 
 > ⚠️ Jangan pernah commit file `.env` atau `service-account.json` ke git. Keduanya sudah berada di `.gitignore` / `.vercelignore`.
 
@@ -192,13 +195,18 @@ vercel --prod --yes
 
 Sebelum deploy, set env berikut di dashboard Vercel (Production) — nilai rahasia diset manual, tidak di-commit:
 
-`FIREBASE_SERVICE_ACCOUNT`, `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `CONTACT_TO`, `CORS_ORIGINS`, `FE_URL`.
+`FIREBASE_SERVICE_ACCOUNT`, `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `CONTACT_TO`, `CORS_ORIGINS`, `FE_URL`, `ADMIN_API_KEY`, `CRON_SECRET`.
 
 Setelah deploy, verifikasi status integrasi di:
 
 ```
 GET https://<deployment-url>/health
 ```
+
+> **Endpoint admin yang diproteksi** (`/api/news/sync`) memerlukan header `x-api-key: <ADMIN_API_KEY>` atau `Authorization: Bearer <CRON_SECRET>`. Untuk mengetesnya:
+> ```bash
+> API_KEY=<ADMIN_API_KEY> npm run test:api
+> ```
 
 ## Verifikasi
 

@@ -81,6 +81,9 @@ async function fetcher(url, { method = "GET", body } = {}) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   const init = { method, headers: { Accept: "application/json" }, signal: ctrl.signal };
+  if (process.env.API_KEY) {
+    init.headers["x-api-key"] = process.env.API_KEY;
+  }
   if (body !== undefined) {
     init.headers["Content-Type"] = "application/json";
     init.body = JSON.stringify(body);

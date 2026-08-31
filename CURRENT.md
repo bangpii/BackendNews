@@ -10,6 +10,8 @@ Ringkasan progres & status fitur backend API saat ini. Diperbarui: **31 Agu 2026
 | Deploy production | ✅ Live | https://bangpii-news.vercel.app |
 | Frontend | ✅ Live | https://bang-pii-news.vercel.app |
 | Remote git | ✅ Ter-push | github.com/bangpii/BackendNews (branch `main`) |
+| Keamanan endpoint admin | ✅ Aktif | `/api/news/sync` dilindungi `x-api-key` / `Authorization: Bearer` |
+| Cron auto-sync berita | ✅ Aktif | Vercel Cron Jobs → `/api/news/sync` tiap 6 jam |
 
 ## Status Integrasi (per `/health`)
 
@@ -43,6 +45,8 @@ Daftar fitur backend dan statusnya.
 | Form kontak | ✅ | Simpan ke Firestore + kirim email via SMTP |
 | Auth/Guest session | ✅ | `whoami`, identitas guest; tanpa login wajib |
 | Rate-limit & anti-DoS | ✅ | Global + strict limiter, slow-down |
+| Proteksi endpoint admin | ✅ | `requireApiKey` (x-api-key / Bearer cron) pada `/api/news/sync` |
+| Cron auto-sync berita | ✅ | Vercel Cron Jobs → `/api/news/sync` tiap 6 jam |
 
 ## Env — Status di Vercel (Produksi)
 
@@ -57,6 +61,8 @@ Daftar fitur backend dan statusnya.
 | `SMTP_USER` / `SMTP_PASS` | ✅ diset | |
 | `CONTACT_TO` | ✅ diset | Tujuan email kontak |
 | `CORS_ORIGINS` / `FE_URL` | ✅ diset | |
+| `ADMIN_API_KEY` | ✅ diset | Proteksi endpoint admin/sensitif |
+| `CRON_SECRET` | ✅ diset | Vercel Cron Jobs (Bearer) |
 | `REDIS_*` | — | Opsional, belum dipakai |
 
 > Nilai rahasia tidak dicantumkan di dokumen ini.

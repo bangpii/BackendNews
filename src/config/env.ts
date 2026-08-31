@@ -39,4 +39,7 @@ export const env = {
   rateLimitWindowMs: num(process.env.RATE_LIMIT_WINDOW_MS, 60_000),
   rateLimitMax: num(process.env.RATE_LIMIT_MAX, 120),
   newsSyncLimit: num(process.env.NEWS_SYNC_LIMIT, 50),
+
+  adminApiKey: process.env.ADMIN_API_KEY ?? "",
+  cronSecret: process.env.CRON_SECRET ?? "",
 } as const;

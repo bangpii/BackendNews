@@ -26,6 +26,19 @@ export async function bumpPostLikes(id: string, delta: number): Promise<void> {
   await c.doc(id).update({ likes: Math.max(0, (post.likes || 0) + delta) });
 }
 
+/** Tambahkan komentar ke array inline `comments` pada post, agar feed menampilkannya. */
+export async function appendPostComment(
+  id: string,
+  comment: { user: unknown; body: string; createdAt: number }
+): Promise<void> {
+  const c = await col("posts");
+  const post = await findPostById(id);
+  if (!post) return;
+  await c
+    .doc(id)
+    .update({ comments: [...(Array.isArray(post.comments) ? post.comments : []), comment] });
+}
+
 export async function incrementPostShares(id: string): Promise<void> {
   const c = await col("posts");
   const post = await findPostById(id);

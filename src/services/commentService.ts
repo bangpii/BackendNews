@@ -7,7 +7,7 @@ import {
   getCommentCountByArticle,
   assertArticleExists,
 } from "../models/commentModel.js";
-import { findPostById } from "../models/postModel.js";
+import { findPostById, appendPostComment } from "../models/postModel.js";
 import { ApiError } from "../utils/apiError.js";
 
 export interface AddCommentInput {
@@ -49,6 +49,14 @@ export async function addComment(input: AddCommentInput): Promise<CommentDoc & {
     createdAt: Date.now(),
   };
   await createComment(doc);
+  // Simpan juga ke array inline `comments` pada post agar `/api/posts` (feed) menampilkannya.
+  if (input.postId) {
+    await appendPostComment(input.postId, {
+      user: input.user,
+      body,
+      createdAt: doc.createdAt,
+    });
+  }
   return { ...doc, id: doc.id };
 }
 

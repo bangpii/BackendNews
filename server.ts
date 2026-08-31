@@ -132,6 +132,8 @@ export function createApp(): Express {
   });
 
   app.get("/health", (_req, res) => {
+    ensureCloudinary();
+    ensureSmtp();
     void initFirebase().then(() => {
       res.json(buildStatus());
     });
